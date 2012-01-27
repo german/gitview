@@ -1,0 +1,7 @@
+<% @tree.contents.each do |el| %>
+  <% if el.class == Grit::Tree %>
+    <li><a onclick="request_tree_for('<%=el.name%>')" href="javascript:void(0)"><%= el.name %></a></li>
+  <% else %>
+    <li><a onclick="request_history_of_file('<%=el.name%>')" href="javascript:void(0)"><%= el.name %></a></li>
+  <% end %>
+<% end %>

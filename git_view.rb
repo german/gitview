@@ -1,0 +1,97 @@
+require 'rubygems'
+require 'grit'
+require 'sinatra/base'
+require 'base64'
+
+require_relative './models/visitor.rb'
+
+class GitView < Sinatra::Base
+  @current_page = 0
+
+  post '/clone_repo' do
+    repo_url = Base64.decode64(params[:repo_url])
+    repo_parts = repo_url.split('/')
+    repo_name = repo_parts.pop.gsub(/\.git/,'')
+    username = repo_parts.pop
+
+    full_repo_name = "/var/www/gitview_repos/#{username}/#{repo_name}"
+
+    if !File.exists?(full_repo_name)
+      output = `mkdir -p /var/www/gitview_repos/#{username} && cd /var/www/gitview_repos/#{username} && git clone #{repo_url}`
+    end
+    begin
+      #$repo = Grit::Repo.new('/Users/german/projects/ruby/repo')
+      $repo = Grit::Repo.new("/var/www/gitview_repos/#{repo_name}")
+    rescue Grit::NoSuchPathError => e
+      puts e.message
+      @error_message = e.message
+      erb :error
+    end
+    redirect to('/tree')
+  end
+
+  get '/' do
+    erb :index
+  end
+
+  get '/history/:encoded_filename' do
+    filename = Base64.decode64(params[:encoded_filename])
+    commit_from_head = params[:commit_from_head].to_i
+    
+    puts 'filename - ' + filename.inspect
+    if !$repo.commits('master', 50).empty?
+      @visitor = GitBrowser::Visitor.new(filename)
+      $repo.commits('master', 50).each_with_index do |commit, index|
+        next if ! commit.stats.files.flatten.reject{|part| part.is_a?(Integer)}.include?(filename)
+        puts 'commit #'+index.to_s
+        @visitor.visit(commit, commit.tree)
+      end
+    end
+    puts "get all commit data! #{@visitor.data_arr.size} different commits"
+    @page = 0
+    @code = @visitor.data_arr[commit_from_head][:code]
+    @date = @visitor.data_arr[commit_from_head][:date]
+    @committer = @visitor.data_arr[commit_from_head][:committer]
+    erb :history
+  end
+
+  get '/tree' do
+    @page = 0
+    @tree = $repo.commits.last.tree
+    erb :tree
+  end
+
+  get '/show_tree/:encoded_path' do
+    path = Base64.decode64(params[:encoded_path])
+    @tree = contents_in_dir($repo.commits.last.tree, path)
+    erb :_tree
+  end
+
+  get '/file/:filename/:page' do
+    @page = params[:page].to_i
+    @filename = Base64.decode64 params[:filename] #'app/controllers/locals_controller.rb'
+    parse_tree(@filename)
+    
+    @code = @visitor.data_arr[@page][:code]
+    @date = @visitor.data_arr[@page][:date]
+    @committer = @visitor.data_arr[@page][:committer]
+    erb :index
+  end
+
+  private
+
+  # only works with fullpath like 'app/view/users' or 'config/initializers'
+  def contents_in_dir(current_tree, fullpath)
+    contents_in_dir_at_level(current_tree, fullpath, 0)
+  end
+
+  def contents_in_dir_at_level(current_tree, fullpath, level)
+    content_names = current_tree.contents.collect{|c| c.name}
+    deeper_tree = current_tree.contents.detect{|content| content.name == fullpath.split('/')[level] && content.class == Grit::Tree}
+    if content_names.include?(fullpath.split('/')[level]) && (fullpath.split('/').length == (level+1))
+      return deeper_tree
+    else
+      contents_in_dir_at_level(deeper_tree, fullpath, level + 1)
+    end
+  end
+end
