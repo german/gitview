@@ -1,1 +1,1 @@
-Time machine for git history (work in progress)
+Time machine for git repositories (work in progress)

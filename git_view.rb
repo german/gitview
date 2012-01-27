@@ -6,6 +6,8 @@ require 'base64'
 require_relative './models/visitor.rb'
 
 class GitView < Sinatra::Base
+  enable :sessions
+
   @current_page = 0
 
   post '/clone_repo' do
@@ -17,15 +19,18 @@ class GitView < Sinatra::Base
     full_repo_name = "/var/www/gitview_repos/#{username}/#{repo_name}"
 
     if !File.exists?(full_repo_name)
-      output = `mkdir -p /var/www/gitview_repos/#{username} && cd /var/www/gitview_repos/#{username} && git clone #{repo_url}`
+      output = `mkdir -p /var/www/gitview_repos/#{username} && cd /var/www/gitview_repos/#{username} && git clone #{repo_url} 2>&1`
+      if output =~ /fatal: remote error:(.*)/mi
+        halt $1.to_s
+      end
     end
+
     begin
       #$repo = Grit::Repo.new('/Users/german/projects/ruby/repo')
-      $repo = Grit::Repo.new("/var/www/gitview_repos/#{repo_name}")
+      $repo = Grit::Repo.new(full_repo_name)
     rescue Grit::NoSuchPathError => e
       puts e.message
-      @error_message = e.message
-      erb :error
+      halt $1.to_s
     end
     redirect to('/tree')
   end
