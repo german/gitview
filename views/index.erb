@@ -7,9 +7,9 @@
     </style>
   </head>
   <body>
-    <form action="/clone_repo" method="POST">
-      <h1>Please insert link to git repo:</h1>
-      <input type="text" length="50" size="40" onchange="jQuery('#repo_url').val(btoa(this.value))"/>
+    <form action="/get_repo" method="POST">
+      <h2>Please insert link to git repo <b>or</b> path to local repo:</h2>
+      <input type="text" value="<%= @last_repo_url %>" length="50" size="40" onchange="jQuery('#repo_url').val(btoa(this.value))"/>
       <input type="hidden" name="repo_url" id="repo_url"/>
       <input type="submit" value="Submit"/>
     </form>

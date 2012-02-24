@@ -2,27 +2,34 @@ require 'rubygems'
 require 'grit'
 require 'sinatra/base'
 require 'base64'
+require 'json'
 
 require_relative './models/visitor.rb'
 
 class GitView < Sinatra::Base
-  enable :sessions
+  use Rack::Session::Pool, :expire_after => 2592000
 
   @current_page = 0
 
-  post '/clone_repo' do
+  post '/get_repo' do
     repo_url = Base64.decode64(params[:repo_url])
-    repo_parts = repo_url.split('/')
-    repo_name = repo_parts.pop.gsub(/\.git/,'')
-    username = repo_parts.pop
+    session[:last_repo_url] = repo_url
 
-    full_repo_name = "/var/www/gitview_repos/#{username}/#{repo_name}"
+    if repo_url =~ /^git:\/\/|git@|https?:\/\//
+      repo_parts = repo_url.split('/')
+      repo_name = repo_parts.pop.gsub(/\.git/,'')
+      username = repo_parts.pop
 
-    if !File.exists?(full_repo_name)
-      output = `mkdir -p /var/www/gitview_repos/#{username} && cd /var/www/gitview_repos/#{username} && git clone #{repo_url} 2>&1`
-      if output =~ /fatal: remote error:(.*)/mi
-        halt $1.to_s
+      full_repo_name = "/var/www/gitview_repos/#{username}/#{repo_name}"
+
+      if !File.exists?(full_repo_name)
+        output = `mkdir -p /var/www/gitview_repos/#{username} && cd /var/www/gitview_repos/#{username} && git clone #{repo_url} 2>&1`
+        if output =~ /fatal: remote error:(.*)/mi
+          halt $1.to_s
+        end
       end
+    else
+      full_repo_name = repo_url
     end
 
     begin
@@ -36,6 +43,7 @@ class GitView < Sinatra::Base
   end
 
   get '/' do
+    @last_repo_url = session[:last_repo_url] || ''
     erb :index
   end
 
@@ -44,9 +52,9 @@ class GitView < Sinatra::Base
     commit_from_head = params[:commit_from_head].to_i
     
     puts 'filename - ' + filename.inspect
-    if !$repo.commits('master', 50).empty?
+    if !$repo.commits('master', 500).empty?
       @visitor = GitBrowser::Visitor.new(filename)
-      $repo.commits('master', 50).each_with_index do |commit, index|
+      $repo.commits('master', 500).each_with_index do |commit, index|
         next if ! commit.stats.files.flatten.reject{|part| part.is_a?(Integer)}.include?(filename)
         puts 'commit #'+index.to_s
         @visitor.visit(commit, commit.tree)
@@ -57,7 +65,9 @@ class GitView < Sinatra::Base
     @code = @visitor.data_arr[commit_from_head][:code]
     @date = @visitor.data_arr[commit_from_head][:date]
     @committer = @visitor.data_arr[commit_from_head][:committer]
-    erb :history
+    #erb :history
+    content_type :json
+    {:committer => @committer, :code => @code, :number_of_commits => @visitor.data_arr.length, :commits => @visitor.data_arr.map{|c| c[:date].to_s} }.to_json
   end
 
   get '/tree' do
@@ -71,7 +81,7 @@ class GitView < Sinatra::Base
     @tree = contents_in_dir($repo.commits.last.tree, path)
     erb :_tree
   end
-
+=begin
   get '/file/:filename/:page' do
     @page = params[:page].to_i
     @filename = Base64.decode64 params[:filename] #'app/controllers/locals_controller.rb'
@@ -82,7 +92,7 @@ class GitView < Sinatra::Base
     @committer = @visitor.data_arr[@page][:committer]
     erb :index
   end
-
+=end
   private
 
   # only works with fullpath like 'app/view/users' or 'config/initializers'
